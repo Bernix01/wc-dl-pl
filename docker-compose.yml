@@ -3,9 +3,11 @@ version: "2"
 services:
   wordpress:
     image: "chriszarate/wordpress:4.8.2"
+    ports:
+      - "8000:80"
     environment:
       VIRTUAL_HOST: "${DOCKER_DEV_DOMAIN}"
-      WORDPRESS_ACTIVATE_PLUGINS: "my-plugin" # plugin folder relative to /wp-content/plugins/
+      WORDPRESS_ACTIVATE_PLUGINS: "woocommerce wc-dl-pl" # plugin folder relative to /wp-content/plugins/
       WORDPRESS_ACTIVATE_THEME: ""   # theme folder relative to /wp-content/themes/
       WORDPRESS_SITE_TITLE: "Project"
       WORDPRESS_SITE_URL: "http://${DOCKER_DEV_DOMAIN}"
@@ -16,7 +18,7 @@ services:
       - "front"
       - "back"
     volumes:
-      - ".:/var/www/html/wp-content/plugins/my-plugin"
+      - "./wc-dl-pl:/var/www/html/wp-content/plugins/wc-dl-pl"
   mysql:
     image: "mariadb:10.2"
     environment:
