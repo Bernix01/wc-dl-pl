@@ -60,16 +60,18 @@ class Admin
     register_setting($this->settings_group, $this->option_name);
   }
 
-  public function submit_invoice($id) {
+  public function submit_invoice($id, $old_status, $new_status) {
+    if ('completed' != $new_status) {
+        return;
+    }
     $order = wc_get_order( $id );
-    // var_dump($order);
-    $items = $order->get_items(); 
-    // var_dump($items);
+    $order->save();
+    $items = $order->get_items();
     $url = 'https://link.datil.co/invoices/issue';
-    $razon_social = $order->get_meta('_billing_ruc');
+    $razon_social = $order->get_meta('_billing_razon_social');
     if(!$razon_social)
       $razon_social = $order->data["billing"]["first_name"]." ".$order->data["billing"]["last_name"];
-    $base_imponible = intval($order->data["total"]) - intval($order->data["total_tax"]);
+    $base_imponible = $order->get_subtotal();
     $obligado_contabilidad =$this->settings['obligado_contabilidad'] === 'on' ? 'true':'false' ;
     $ambiente = $this->settings['ambiente'] === 'on' ? '1':'2' ;
     $data = '{
@@ -95,14 +97,14 @@ class Admin
         "impuestos":[
           {
             "base_imponible":'.$base_imponible.',
-            "valor":'.$order->data["total_tax"].',
+            "valor":'.$order->get_total_tax().',
             "codigo":"2",
             "codigo_porcentaje":"2"
           }
         ],
-        "importe_total":'.$order->data["total"].',
+        "importe_total":'.$order->get_total().',
         "propina":0.0,
-        "descuento":'.$order->data["discount_total"].'
+        "descuento":'.$order->get_discount_total().'
       },
       "comprador":{
         "email":"'.$order->data["billing"]["email"].'",
@@ -116,16 +118,16 @@ class Admin
     $items = $order->get_items();
     $totalitems = count($items);
     $i = 0;
-    foreach ( $items as $item ) {
+    foreach ($items as $item) {
 
       $data .= ' {
         "cantidad":'.$item->get_quantity().',
-        "precio_unitario": '.$item->get_product()->get_price().',
+        "precio_unitario": '.($item->get_product()->get_price() * 0.88).',
         "descripcion": "'.$item->get_product()->get_name().'",
-        "precio_total_sin_impuestos": '.$item->get_subtotal().',
+        "precio_total_sin_impuestos": '. $item->get_subtotal() .',
         "impuestos": [
           {
-            "base_imponible":'.$base_imponible.',
+            "base_imponible":'.$item->get_subtotal().',
             "valor":'.$item->get_total_tax().',
             "tarifa":12.0,
             "codigo":"2",
@@ -133,51 +135,67 @@ class Admin
           }
         ],
         "descuento": 0.0
-      }';
-      if (++$i !== $totalitems) {
-          // last element
-          $data.= ',';
-      }
+      },';
     }
-      $data .= '
+    $data .= '
+      {
+        "cantidad": 1,
+        "precio_unitario": '. $order->get_shipping_total() .',
+        "descripcion": "Costos de envío.",
+        "precio_total_sin_impuestos": '. $order->get_shipping_total() .',
+        "impuestos": [
+          {
+            "base_imponible":'. ( $order->get_shipping_total() - $order->get_shipping_tax() ).',
+            "valor":'.$order->get_shipping_tax().',
+            "tarifa":12.0,
+            "codigo":"2",
+            "codigo_porcentaje":"2"
+          }
+        ],
+        "descuento": 0.0
+      }
       ],
       "pagos": [
         {
           "medio": "'.$this->clean_medio($order->data["payment_method"]).'",
-          "total": '.intval($order->data["total"]).',
+          "total": '.$order->get_total().',
           "propiedades": {
           }
         }
       ]
     }';
     // use key 'http' even if you send the request to https://...
+    $key = $this->settings['api-key'];
     $options = array(
-        'http' => array(
-            'header'  => "Content-type: application/json\r\n".
-                         "X-Key: " . $this->settings['api-key'] . "\r\n".
-                         "X-Password: ". $this->settings['key-password'] . "\r\n",
-            'method'  => 'POST',
-            'content' => $data
-        )
+        'headers'  => array("Content-type" => "application/json",
+                        "X-Key" => $key,
+                        "X-Password"=> $this->settings['key-password'] ),
+        'method'  => 'POST',
+        'body' => $data
     );
-    $context  = stream_context_create($options);
-    $result = file_get_contents($url, false, $context);
-    if ($result === false) {
-      /* Handle error */
-      $a = 1;
-      
+
+    $order->add_order_note( 'Datil: datil_factura_data' . $data );
+    $order->save();
+    $result = wp_remote_post($url, $options);
+    if (is_wp_error($result)) {
+        $order->add_order_note( 'Datil:  NO ENVIADA' );
+        $order->save();
+        return false;
+    } else {
+        $decoded = json_decode($result['body'], true);
+        $order->add_order_note( 'Datil: Enviada' );
+        $order->add_order_note( 'Datil: datil_factura_response' . $decoded );
+        $order->save();
+
     }
-    // var_dump($order->get_meta_data());
-    // echo $data;
-    // var_dump($result);
-    // die();
   }
 
   private function clean_medio($medio){
     switch ($medio) {
       case 'cod':
         return "efectivo";
-      
+      case 'paymentez':
+        return "tarjeta_credito_nacional";
       default:
         return $medio;
     }
@@ -205,7 +223,7 @@ class Admin
     if (!$_POST['billing_ruc']) {
        $_POST['billing_ruc'] = '99999999999';
        $_POST['billing_tipo_identificacion'] = "07";
-    }elseif($_POST['billing_ruc']){
+    } elseif ($_POST['billing_ruc']) {
      $_POST['billing_tipo_identificacion'] = "05";
     }
   }
@@ -302,7 +320,7 @@ class Admin
         'slug'=>"direccion",
         'type'=>'text'
         ]
-        
+
         // [
         //     'label' => 'Textarea Label',
         //     'slug'  => 'textarea-slug',

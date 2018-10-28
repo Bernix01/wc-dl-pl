@@ -1,0 +1,24 @@
+{
+  "remotePath": "./wp-content/plugins/wc-dl-pl",
+  "host": "ftp.kido.com.ec",
+  "username": "desarrollo@kido.com.ec",
+  "password": "KiTienda-2017",
+  "port": 21,
+  "secure": false,
+  "protocol": "ftp",
+  "uploadOnSave": false,
+  "passive": false,
+  "debug": true,
+  "privateKeyPath": null,
+  "passphrase": null,
+  "ignore": [
+      "\\.vscode",
+      "\\.git",
+      "\\.DS_Store"
+  ],
+  "generatedFiles": {
+      "uploadOnSave": false,
+      "extensionsToInclude": [],
+      "path": ""
+  }
+}
